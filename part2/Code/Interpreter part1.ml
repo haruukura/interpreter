@@ -1,10 +1,9 @@
-type stackValue = BOOL of bool | INT of int | ERROR | STRING of string | NAME of string | UNIT 
+type stackValue = BOOL of bool | INT of int | ERROR | STRING of string | NAME of string | UNIT | CLOSURE
 
-type command = ADD | SUB | MUL | DIV| PUSH of stackValue | POP | REM | NEG | SWAP | TOSTRING | PRINTLN | QUIT | CAT
+type command = ADD | SUB | MUL | DIV| PUSH of stackValue | POP | REM | NEG | SWAP | TOSTRING | PRINTLN | QUIT | CAT | AND | OR | NOT | EQUAL | LESSTHAN | BIND | IF | LET | END
 
 
-
-let interpreter input output = 
+let rec interpreter input output = 
   let ic = open_in input in
   let oc = open_out output in
   let rec loop_read acc = 
@@ -45,6 +44,15 @@ let interpreter input output =
     | "toString" -> TOSTRING
     | "println" -> PRINTLN
     | "cat" -> CAT
+    | "and" -> AND
+    | "or" -> OR
+    | "not" -> NOT
+    | "equal" -> EQUAL
+    | "lessThan" -> LESSTHAN
+    | "bind" -> BIND
+    | "if" -> IF
+    | "let" -> LET
+    | "end" -> END
     | "push -0" -> PUSH(INT(0))
     | "push :true:"  -> PUSH(BOOL(true))
     | "push :false:" -> PUSH(BOOL(false))
@@ -63,75 +71,139 @@ let interpreter input output =
     |NAME str -> str
     |UNIT -> ":unit:"
     |ERROR -> ":error:"
-    (*|CLOSURE -> ":fun:"*)
+    |CLOSURE -> ":fun:"
   in
+
 
 let comlist = List.map str2com strList in 
 
-  let rec processor cl stack = 
+
+  let rec lookup key env : stackValue option =
+    match env with
+    |[] -> None
+    |(name, value)::restOfList -> if name = key then Some value else lookup key restOfList
+  in
+
+
+
+  let rec processor cl stack env = 
     match (cl,stack) with 
-    |(ADD::restOfCommands, INT(a)::INT(b)::restOfStack) -> processor restOfCommands ( INT(a + b) :: restOfStack)
-    |(ADD::restOfCommands, stack) -> processor restOfCommands ( ERROR :: stack)
+    |(ADD::restOfCommands, INT(a)::INT(b)::restOfStack) -> processor restOfCommands ( INT(a + b) :: restOfStack) env
+    |(ADD::restOfCommands, stack) -> processor restOfCommands ( ERROR :: stack) env
 
-    |(SUB::restOfCommands, INT(a)::INT(b)::restOfStack) -> processor restOfCommands ( INT(b - a) :: restOfStack)
-    |(SUB::restOfCommands,stack) -> processor restOfCommands ( ERROR :: stack)
+    |(SUB::restOfCommands, INT(a)::INT(b)::restOfStack) -> processor restOfCommands ( INT(b - a) :: restOfStack) env
+    |(SUB::restOfCommands,stack) -> processor restOfCommands ( ERROR :: stack) env
 
-    |(MUL::restOfCommands, INT(a)::INT(b)::restOfStack) -> processor restOfCommands ( INT(a * b) :: restOfStack)
-    |(MUL::restOfCommands, stack) -> processor restOfCommands ( ERROR :: stack)
+    |(MUL::restOfCommands, INT(a)::INT(b)::restOfStack) -> processor restOfCommands ( INT(a * b) :: restOfStack) env
+    |(MUL::restOfCommands, stack) -> processor restOfCommands ( ERROR :: stack) env
 
-    |(DIV::restOfCommands, INT(a)::INT(0)::restOfStack) -> processor restOfCommands ( ERROR :: stack)
-    |(DIV::restOfCommands, INT(0)::INT(b)::restOfStack) -> processor restOfCommands ( ERROR :: stack)
-    |(DIV::restOfCommands, INT(a)::INT(b)::restOfStack) when (b mod a) != 0 -> processor restOfCommands( INT(0) :: restOfStack)
-    |(DIV::restOfCommands, INT(a)::INT(b)::restOfStack) -> processor restOfCommands( INT(b / a) ::restOfStack)
-    |(DIV::restOfCommands, stack) -> processor restOfCommands (ERROR ::stack)
+    |(DIV::restOfCommands, INT(a)::INT(0)::restOfStack) -> processor restOfCommands ( ERROR :: stack) env
+    |(DIV::restOfCommands, INT(0)::INT(b)::restOfStack) -> processor restOfCommands ( ERROR :: stack) env
+    |(DIV::restOfCommands, INT(a)::INT(b)::restOfStack) when (b mod a) != 0 -> processor restOfCommands( INT(0) :: restOfStack) env
+    |(DIV::restOfCommands, INT(a)::INT(b)::restOfStack) -> processor restOfCommands( INT(b / a) ::restOfStack) env
+    |(DIV::restOfCommands, stack) -> processor restOfCommands (ERROR ::stack) env
 
-    |(PUSH(BOOL(true))::restOfCommands, restOfStack) -> processor restOfCommands ( BOOL(true) :: restOfStack)
-    |(PUSH(BOOL(false))::restOfCommands, restOfStack) -> processor restOfCommands ( BOOL(false) :: restOfStack)
+    |(PUSH(BOOL(true))::restOfCommands, restOfStack) -> processor restOfCommands ( BOOL(true) :: restOfStack) env
+    |(PUSH(BOOL(false))::restOfCommands, restOfStack) -> processor restOfCommands ( BOOL(false) :: restOfStack) env
 
-    |(PUSH(INT(a))::restOfCommands, restOfStack) -> processor restOfCommands(INT(a) :: restOfStack)
+    |(PUSH(INT(a))::restOfCommands, restOfStack) -> processor restOfCommands(INT(a) :: restOfStack) env
 
-    |(PUSH(STRING(a))::restOfCommands, restOfStack) -> processor restOfCommands( STRING(a):: restOfStack)
+    |(PUSH(STRING(a))::restOfCommands, restOfStack) -> processor restOfCommands( STRING(a):: restOfStack) env
 
-    |(PUSH(NAME(a))::restOfCommands, restOfStack) -> processor restOfCommands( NAME(a)::restOfStack)
+    |(PUSH(NAME(a))::restOfCommands, restOfStack) -> processor restOfCommands( NAME(a)::restOfStack) env
 
-    |(PUSH(UNIT)::restOfCommands, restOfStack) -> processor restOfCommands( UNIT::restOfStack)
+    |(PUSH(UNIT)::restOfCommands, restOfStack) -> processor restOfCommands( UNIT::restOfStack) env
 
-    |(PUSH(ERROR)::restOfCommands, restOfStack) -> processor restOfCommands( ERROR::restOfStack)
+    |(PUSH(ERROR)::restOfCommands, restOfStack) -> processor restOfCommands( ERROR::restOfStack) env
 
-    |(POP::restOfCommands, _::restOfStack) -> processor restOfCommands(restOfStack)
-    |(POP::restOfCommands, []) -> processor restOfCommands (ERROR :: stack)
+    |(POP::restOfCommands, _::restOfStack) -> processor restOfCommands(restOfStack) env
+    |(POP::restOfCommands, []) -> processor restOfCommands (ERROR :: stack) env
 
-    |(REM::restOfCommands, INT(a)::INT(0)::restOfStack) -> processor restOfCommands (ERROR :: stack)
-    |(REM::restOfCommands, INT(a)::INT(b)::restOfStack) -> processor restOfCommands (INT(b mod a):: restOfStack)
-    |(REM::restOfCommands, stack) -> processor restOfCommands (ERROR :: stack)
+    |(REM::restOfCommands, INT(a)::INT(0)::restOfStack) -> processor restOfCommands (ERROR :: stack) env
+    |(REM::restOfCommands, INT(a)::INT(b)::restOfStack) -> processor restOfCommands (INT(b mod a):: restOfStack) env
+    |(REM::restOfCommands, stack) -> processor restOfCommands (ERROR :: stack) env
 
-    |(NEG::restOfCommands, INT(a)::[]) -> processor restOfCommands (INT(a * -1):: [])
-    |(NEG::restOfCommands, INT(a)::restOfStack) -> processor restOfCommands (INT(a * -1):: restOfStack)
-    |(NEG::restOfCommands, stack) -> processor restOfCommands (ERROR :: stack)
+    |(NEG::restOfCommands, INT(a)::[]) -> processor restOfCommands (INT(a * -1):: []) env
+    |(NEG::restOfCommands, INT(a)::restOfStack) -> processor restOfCommands (INT(a * -1):: restOfStack) env
+    |(NEG::restOfCommands, stack) -> processor restOfCommands (ERROR :: stack) env
     
 
-    |(SWAP::restOfCommands, a::b::restOfStack) -> processor restOfCommands (b::a::restOfStack)
-    |(SWAP::restOfCommands, [a]) -> processor restOfCommands (ERROR :: [a])
-    |(SWAP::restOfCommands, []) -> processor restOfCommands (ERROR :: [])
+    |(SWAP::restOfCommands, a::b::restOfStack) -> processor restOfCommands (b::a::restOfStack) env
+    |(SWAP::restOfCommands, [a]) -> processor restOfCommands (ERROR :: [a])env
+    |(SWAP::restOfCommands, []) -> processor restOfCommands (ERROR :: [])env
 
-    |(TOSTRING::restOfCommands, []) -> processor restOfCommands (ERROR :: [])
-    |(TOSTRING::restOfCommands, a::restOfStack) -> processor restOfCommands (STRING(string_of_element a) ::restOfStack)
+    |(TOSTRING::restOfCommands, []) -> processor restOfCommands (ERROR :: []) env
+    |(TOSTRING::restOfCommands, a::restOfStack) -> processor restOfCommands (STRING(string_of_element a) ::restOfStack)env
 
-    |(PRINTLN::restOfCommands, STRING str :: restOfStack) -> output_string oc (str ^ "\n"); processor restOfCommands restOfStack
-    |(PRINTLN::restOfCommands, x :: restOfStack) -> processor restOfCommands (ERROR :: x :: restOfStack)
-    |(PRINTLN::restOfCommands, []) -> processor restOfCommands (ERROR :: [])
+    |(PRINTLN::restOfCommands, STRING str :: restOfStack) -> output_string oc (str ^ "\n"); processor restOfCommands restOfStack env
+    |(PRINTLN::restOfCommands, x :: restOfStack) -> processor restOfCommands (ERROR :: x :: restOfStack)env
+    |(PRINTLN::restOfCommands, []) -> processor restOfCommands (ERROR :: [])env
 
-    |(CAT::restOfCommands, STRING(a)::STRING(b)::restOfStack) -> processor restOfCommands(STRING(a ^ b) :: restOfStack)
-    |(CAT::restOfCommands,STRING(a)::_::restOfStack) -> processor restOfCommands (ERROR::stack)
-    |(CAT::restOfCommands, _::STRING(a)::restOfStack) -> processor restOfCommands (ERROR::stack)
-    |()
+    |(CAT::restOfCommands, STRING(a)::STRING(b)::restOfStack) -> processor restOfCommands(STRING(a ^ b) :: restOfStack)env
+    |(CAT::restOfCommands,STRING(a)::_::restOfStack) -> processor restOfCommands (ERROR::stack)env
+    |(CAT::restOfCommands, _::STRING(a)::restOfStack) -> processor restOfCommands (ERROR::stack)env
+    |(CAT::restOfCommands, _::_::restOfStack) -> processor restOfCommands (ERROR::stack)env
+    |(CAT::restOfCommands, []) -> processor restOfCommands (ERROR::stack)env
+
+    |(AND::restOfCommands, BOOL(true)::BOOL(true)::restOfStack) -> processor restOfCommands(BOOL(true)::restOfStack)env
+    |(AND::restOfCommands, BOOL(false)::BOOL(true)::restOfStack) -> processor restOfCommands(BOOL(false)::restOfStack)env
+    |(AND::restOfCommands, BOOL(true)::BOOL(false)::restOfStack) -> processor restOfCommands(BOOL(false)::restOfStack)env
+    |(AND::restOfCommands, BOOL(false)::BOOL(false)::restOfStack) -> processor restOfCommands(BOOL(false)::restOfStack)env
+    |(AND::restOfCommands, stack) -> processor restOfCommands(ERROR::stack)env
+
+    |(OR::restOfCommands, BOOL(true)::BOOL(true)::restOfStack) -> processor restOfCommands(BOOL(true)::restOfStack)env
+    |(OR::restOfCommands, BOOL(false)::BOOL(true)::restOfStack) -> processor restOfCommands(BOOL(true)::restOfStack)env
+    |(OR::restOfCommands, BOOL(true)::BOOL(false)::restOfStack) -> processor restOfCommands(BOOL(true)::restOfStack)env
+    |(OR::restOfCommands, BOOL(false)::BOOL(false)::restOfStack) -> processor restOfCommands(BOOL(false)::restOfStack)env
+    |(OR::restOfCommands, stack) -> processor restOfCommands(ERROR::stack)env
+
+    |(NOT::restOfCommands, BOOL(true)::restOfStack) -> processor restOfCommands(BOOL(false)::restOfStack)env
+    |(NOT::restOfCommands, BOOL(false)::restOfStack) -> processor restOfCommands(BOOL(true)::restOfStack)env
+    |(NOT::restOfCommands, stack) -> processor restOfCommands(ERROR::stack)env
+
+    |(EQUAL::restOfCommands, INT(a)::INT(b)::restOfStack) -> processor restOfCommands(BOOL(a=b)::restOfStack)env
+    |(EQUAL::restOfCommands, stack) -> processor restOfCommands(ERROR::stack)env
+
+    (*CHECK THIS IN TESTING ORDER OF A AND B*)
+    |(LESSTHAN::restOfCommands, INT(a)::INT(b)::restOfStack) -> processor restOfCommands(BOOL(b<a)::restOfStack)env
+    |(LESSTHAN::restOfCommands, stack) -> processor restOfCommands(ERROR::stack)env
+
+    |(BIND::restOfCommands, INT(a)::NAME(b)::restOfStack) -> let enviorment = (b,INT(a)) :: env in processor restOfCommands( UNIT :: restOfStack) enviorment
+    |(BIND::restOfCommands, STRING(a)::NAME(b)::restOfStack) -> let enviorment = (b,STRING(a)) :: env in processor restOfCommands( UNIT :: restOfStack) enviorment
+    |(BIND::restOfCommands, BOOL(a)::NAME(b)::restOfStack) -> let enviorment = (b,BOOL(a)) :: env in processor restOfCommands( UNIT :: restOfStack) enviorment
+    
+    
+    |(IF::restOfCommands, a::b::BOOL(true)::restOfStack) -> processor restOfCommands (a::restOfStack) env
+    |(IF::restOfCommands, a::b::BOOL(false)::restOfStack) -> processor restOfCommands (b::restOfStack) env
+    |(IF::restOfCommands, stack) -> processor restOfCommands (ERROR::stack) env
+    
+
+    |(LET::restOfCommands, stack) -> processor restOfCommands (stack)env
+    |(END::restOfCommands, stack) -> processor restOfCommands(stack) env
+    
+    
+    
+    |(BIND::restOfCommands, UNIT::NAME(b)::restOfStack) -> let enviorment = (b, UNIT) :: env in processor restOfCommands(UNIT:: restOfStack) enviorment
+
+
+
+    |(BIND::restOfCommands, NAME(a)::NAME(b)::restOfStack) -> 
+      (match lookup a env with 
+      | Some x -> let enviorment = (b , x) :: env in processor restOfCommands(UNIT :: restOfStack) enviorment
+      | _ -> processor restOfCommands(ERROR :: NAME(a) :: NAME(b) :: restOfStack) env)
+
+    |(BIND::restOfCommands, stack) -> processor restOfCommands(ERROR::stack) env
+
+
+    
+
 
     |(QUIT::_, stack) -> stack
 
    |(_, stack) -> ERROR::stack 
   in 
-  let _ = processor comlist [] in 
+  let _ = processor comlist [] [] in 
   close_in ic;
   close_out oc;
   
-  (*let () = interpreter Sys.argv.(1) "interpreter/part1/output_testINPUTS2.txt"*)
+  (*let () = interpreter Sys.argv.(1) "output_test_for_input_13.txt"*)
